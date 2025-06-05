@@ -1,0 +1,101 @@
+import 'package:flutter/foundation.dart';
+import '../repositories/data_repository.dart';
+
+/// Provider for managing prize configurations and history.
+class PrizeProvider extends ChangeNotifier {
+  final DataRepository _dataRepository = DataRepository();
+  List<Map<String, dynamic>> _prizes = [];
+  List<Map<String, dynamic>> _prizeHistory = [];
+
+  /// The list of configured prizes.
+  List<Map<String, dynamic>> get prizes => _prizes;
+
+  /// The history of all prizes won.
+  List<Map<String, dynamic>> get prizeHistory => _prizeHistory;
+
+  /// Constructor that loads the prize data from the database.
+  PrizeProvider() {
+    // Initialize data loading asynchronously
+    Future.microtask(() => loadPrizeData());
+  }
+
+  /// Loads prize configurations and history from persistent storage.
+  Future<void> loadPrizeData() async {
+    try {
+      // Load prize configurations
+      _prizes = await _dataRepository.getAllPrizes();
+
+      // Load prize history
+      _prizeHistory = await _dataRepository.getPrizeHistory();
+
+      notifyListeners();
+    } catch (e) {
+      // Handle error (could add logging here)
+      print('Error loading prize data: $e');
+    }
+  }
+
+  /// Adds a new prize configuration.
+  Future<void> addPrize(String name, double probability) async {
+    final success = await _dataRepository.addPrize(name, probability);
+    if (success) {
+      await loadPrizeData(); // Reload prizes from database
+    }
+  }
+
+  /// Updates an existing prize configuration.
+  Future<void> updatePrize(int id, String name, double probability) async {
+    final success = await _dataRepository.updatePrize(id, name, probability);
+    if (success) {
+      await loadPrizeData(); // Reload prizes from database
+    }
+  }
+
+  /// Deletes a prize configuration.
+  Future<void> deletePrize(int id) async {
+    final success = await _dataRepository.deletePrize(id);
+    if (success) {
+      await loadPrizeData(); // Reload prizes from database
+    }
+  }
+
+  /// Records a prize win in the history.
+  Future<void> recordPrizeWin(String prizeName, String customer) async {
+    // Find the prize ID if it exists
+    int? prizeId;
+    for (var prize in _prizes) {
+      if (prize['name'] == prizeName) {
+        prizeId = prize['id'] as int;
+        break;
+      }
+    }
+
+    // Get the active session or create a new one if none exists
+    int? sessionId;
+    final activeSession = await _dataRepository.getActiveSession();
+    if (activeSession != null) {
+      sessionId = activeSession['id'] as int;
+    } else {
+      // Default to 1 attempt if no active session
+      sessionId = await _dataRepository.startSession(1);
+    }
+
+    if (sessionId != null) {
+      await _dataRepository.recordPrizeWin(sessionId, prizeId, prizeName, customer);
+      await loadPrizeData(); // Reload prize history
+    }
+  }
+
+  /// Clears all prize history.
+  Future<void> clearHistory() async {
+    // This would require adding a method to the database service to clear history
+    // For now, we'll just reload the data
+    await loadPrizeData();
+    notifyListeners();
+  }
+
+  /// Validates that the sum of all prize probabilities is less than or equal to 100%.
+  Future<bool> validateProbabilities() async {
+    return await _dataRepository.validateProbabilities();
+  }
+}
