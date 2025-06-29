@@ -30,7 +30,7 @@ class DatabaseService {
     // Open the database
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -55,7 +55,18 @@ class DatabaseService {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // Handle database schema migrations here
     if (oldVersion < newVersion) {
-      // Add migration logic as needed
+      // Migration from version 1 to 2
+      if (oldVersion == 1 && newVersion >= 2) {
+        // Add max_occurrences and current_occurrences columns to prizes table
+        await db.execute('''
+          ALTER TABLE ${DatabaseSchema.prizesTable} 
+          ADD COLUMN ${DatabaseSchema.prizeMaxOccurrencesColumn} INTEGER NOT NULL DEFAULT 0
+        ''');
+        await db.execute('''
+          ALTER TABLE ${DatabaseSchema.prizesTable} 
+          ADD COLUMN ${DatabaseSchema.prizeCurrentOccurrencesColumn} INTEGER NOT NULL DEFAULT 0
+        ''');
+      }
     }
   }
 
@@ -150,7 +161,7 @@ class DatabaseService {
   }
 
   /// Adds a new prize.
-  Future<int> addPrize(String name, double probability) async {
+  Future<int> addPrize(String name, double probability, int maxOccurrences) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
 
@@ -159,6 +170,8 @@ class DatabaseService {
       {
         DatabaseSchema.prizeNameColumn: name,
         DatabaseSchema.prizeProbabilityColumn: probability,
+        DatabaseSchema.prizeMaxOccurrencesColumn: maxOccurrences,
+        DatabaseSchema.prizeCurrentOccurrencesColumn: 0,
         DatabaseSchema.prizeCreatedAtColumn: now,
         DatabaseSchema.prizeUpdatedAtColumn: now,
       },
@@ -166,7 +179,7 @@ class DatabaseService {
   }
 
   /// Updates an existing prize.
-  Future<int> updatePrize(int id, String name, double probability) async {
+  Future<int> updatePrize(int id, String name, double probability, int maxOccurrences) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
 
@@ -175,6 +188,7 @@ class DatabaseService {
       {
         DatabaseSchema.prizeNameColumn: name,
         DatabaseSchema.prizeProbabilityColumn: probability,
+        DatabaseSchema.prizeMaxOccurrencesColumn: maxOccurrences,
         DatabaseSchema.prizeUpdatedAtColumn: now,
       },
       where: '${DatabaseSchema.prizeIdColumn} = ?',
@@ -259,6 +273,11 @@ class DatabaseService {
     final db = await database;
     final now = DateTime.now().toIso8601String();
 
+    // Increment the current occurrences of the prize if it has an ID
+    if (prizeId != null) {
+      await incrementPrizeOccurrences(prizeId);
+    }
+
     return await db.insert(
       DatabaseSchema.prizeHistoryTable,
       {
@@ -269,6 +288,33 @@ class DatabaseService {
         DatabaseSchema.historyCustomerColumn: customer,
       },
     );
+  }
+
+  /// Increments the current occurrences of a prize.
+  Future<int> incrementPrizeOccurrences(int prizeId) async {
+    final db = await database;
+
+    // Get the current occurrences
+    final List<Map<String, dynamic>> result = await db.query(
+      DatabaseSchema.prizesTable,
+      columns: [DatabaseSchema.prizeCurrentOccurrencesColumn],
+      where: '${DatabaseSchema.prizeIdColumn} = ?',
+      whereArgs: [prizeId],
+    );
+
+    if (result.isNotEmpty) {
+      final currentOccurrences = result.first[DatabaseSchema.prizeCurrentOccurrencesColumn] as int;
+
+      // Increment the current occurrences
+      return await db.update(
+        DatabaseSchema.prizesTable,
+        {DatabaseSchema.prizeCurrentOccurrencesColumn: currentOccurrences + 1},
+        where: '${DatabaseSchema.prizeIdColumn} = ?',
+        whereArgs: [prizeId],
+      );
+    }
+
+    return 0;
   }
 
   /// Gets all prize history.
@@ -313,5 +359,47 @@ class DatabaseService {
       'history': history,
       'exported_at': DateTime.now().toIso8601String(),
     };
+  }
+
+  /// Resets the database to its default state.
+  /// This deletes all data from all tables and re-inserts the default values.
+  Future<void> resetDatabase() async {
+    final db = await database;
+
+    // Use a transaction to ensure all operations succeed or fail together
+    await db.transaction((txn) async {
+      // Delete all data from all tables
+      await txn.delete(DatabaseSchema.prizeHistoryTable);
+      await txn.delete(DatabaseSchema.sessionTable);
+      await txn.delete(DatabaseSchema.prizesTable);
+      await txn.delete(DatabaseSchema.configTable);
+
+      // Re-insert default config values
+      for (var entry in DatabaseSchema.defaultConfig.entries) {
+        await txn.insert(
+          DatabaseSchema.configTable,
+          {
+            DatabaseSchema.configKeyColumn: entry.key,
+            DatabaseSchema.configValueColumn: entry.value,
+          },
+        );
+      }
+
+      // Re-insert default prizes
+      final now = DateTime.now().toIso8601String();
+      for (var prize in DatabaseSchema.defaultPrizes) {
+        await txn.insert(
+          DatabaseSchema.prizesTable,
+          {
+            DatabaseSchema.prizeNameColumn: prize['name'],
+            DatabaseSchema.prizeProbabilityColumn: prize['probability'],
+            DatabaseSchema.prizeMaxOccurrencesColumn: prize['max_occurrences'],
+            DatabaseSchema.prizeCurrentOccurrencesColumn: 0, // Reset to 0
+            DatabaseSchema.prizeCreatedAtColumn: now,
+            DatabaseSchema.prizeUpdatedAtColumn: now,
+          },
+        );
+      }
+    });
   }
 }

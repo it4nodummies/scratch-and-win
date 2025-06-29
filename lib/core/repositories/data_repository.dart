@@ -68,6 +68,10 @@ class DataRepository {
   Future<bool> setRemainingScratcchCards(int count) async {
     try {
       await _databaseService.setConfigValue('remaining_scratch_cards', count.toString());
+
+      // Recalculate probabilities after the remaining scratch cards count changes
+      await recalculateProbabilities();
+
       return true;
     } catch (e) {
       return false;
@@ -79,6 +83,7 @@ class DataRepository {
     try {
       final currentCount = await getRemainingScratcchCards();
       if (currentCount > 0) {
+        // setRemainingScratcchCards already recalculates probabilities
         await setRemainingScratcchCards(currentCount - 1);
       }
       return true;
@@ -98,9 +103,9 @@ class DataRepository {
   }
 
   /// Adds a new prize.
-  Future<bool> addPrize(String name, double probability) async {
+  Future<bool> addPrize(String name, double probability, int maxOccurrences) async {
     try {
-      await _databaseService.addPrize(name, probability);
+      await _databaseService.addPrize(name, probability, maxOccurrences);
       return true;
     } catch (e) {
       return false;
@@ -108,10 +113,42 @@ class DataRepository {
   }
 
   /// Updates an existing prize.
-  Future<bool> updatePrize(int id, String name, double probability) async {
+  Future<bool> updatePrize(int id, String name, double probability, int maxOccurrences) async {
     try {
-      final result = await _databaseService.updatePrize(id, name, probability);
+      final result = await _databaseService.updatePrize(id, name, probability, maxOccurrences);
       return result > 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Recalculate probabilities for all prizes based on remaining occurrences and remaining scratch cards.
+  Future<bool> recalculateProbabilities() async {
+    try {
+      final remainingCards = await getRemainingScratcchCards();
+      if (remainingCards <= 0) return false;
+
+      final prizes = await getAllPrizes();
+      for (var prize in prizes) {
+        final int id = prize['id'] as int;
+        final String name = prize['name'] as String;
+        final int maxOccurrences = prize['max_occurrences'] as int;
+        final int currentOccurrences = prize['current_occurrences'] as int;
+
+        // Calculate remaining occurrences
+        final int remainingOccurrences = maxOccurrences - currentOccurrences;
+
+        // If no remaining occurrences, set probability to 0
+        double probability = 0.0;
+        if (remainingOccurrences > 0) {
+          // Calculate probability as (remainingOccurrences / remainingCards) * 100
+          probability = (remainingOccurrences / remainingCards) * 100;
+        }
+
+        await _databaseService.updatePrize(id, name, probability, maxOccurrences);
+      }
+
+      return true;
     } catch (e) {
       return false;
     }
@@ -196,5 +233,18 @@ class DataRepository {
       total += prize['probability'] as double;
     }
     return total <= 100.0;
+  }
+
+  /// Resets all data in the database to default values.
+  /// This will delete all sessions, prizes, and configuration data and restore defaults.
+  Future<bool> resetAllData() async {
+    try {
+      // Reset the database
+      await _databaseService.resetDatabase();
+      return true;
+    } catch (e) {
+      print('Error resetting data: $e');
+      return false;
+    }
   }
 }

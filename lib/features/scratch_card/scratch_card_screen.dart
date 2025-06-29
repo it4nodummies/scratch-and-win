@@ -79,7 +79,8 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
     // Update session state
     sessionProvider.decrementAttempts();
     if (isWinner) {
-      sessionProvider.addPrize(prizeName, prizeValue);
+      // Pass context to update PrizeProvider as well
+      sessionProvider.addPrize(prizeName, prizeValue, context: context);
 
       // Start confetti animation for winners
       if (mounted && !_disposed) {

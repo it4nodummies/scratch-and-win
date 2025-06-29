@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:pin_code_fields/pin_code_fields.dart';
 import '../../core/models/auth_provider.dart';
 import '../../core/models/session_provider.dart';
+import '../../core/repositories/data_repository.dart';
 import '../../shared/constants/app_constants.dart';
 import '../../shared/widgets/app_scaffold.dart';
 import '../../shared/widgets/responsive_layout.dart';
@@ -17,7 +18,28 @@ class OperatorScreen extends StatefulWidget {
 
 class _OperatorScreenState extends State<OperatorScreen> {
   int _scratchCardCount = AppConstants.defaultScratchCardCount;
+  int _remainingTickets = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadRemainingTickets();
+  }
+
+  Future<void> _loadRemainingTickets() async {
+    final dataRepository = DataRepository();
+    final remainingTickets = await dataRepository.getRemainingScratcchCards();
+    setState(() {
+      _remainingTickets = remainingTickets;
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reload remaining tickets when dependencies change (e.g., when returning to this screen)
+    _loadRemainingTickets();
+  }
 
   @override
   void dispose() {
@@ -465,8 +487,14 @@ class _OperatorScreenState extends State<OperatorScreen> {
           Text(
             sessionProvider.isSessionActive
                 ? 'Una sessione è già attiva. Puoi continuarla o terminarla.'
-                : 'Premi il pulsante per iniziare la sessione di gioco:',
-            style: Theme.of(context).textTheme.bodyMedium,
+                : _remainingTickets <= 0
+                    ? 'Non ci sono biglietti rimanenti. Impossibile iniziare una nuova sessione.'
+                    : 'Premi il pulsante per iniziare la sessione di gioco:',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: _remainingTickets <= 0 && !sessionProvider.isSessionActive
+                  ? Theme.of(context).colorScheme.error
+                  : null,
+            ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
@@ -511,15 +539,17 @@ class _OperatorScreenState extends State<OperatorScreen> {
             ),
           ] else ...[
             ElevatedButton.icon(
-              onPressed: () {
-                // Start a new session and navigate to scratch card screen
-                sessionProvider.startSession(_scratchCardCount);
-                Navigator.pushNamed(
-                  context, 
-                  AppRoutes.scratchCard, 
-                  arguments: _scratchCardCount
-                );
-              },
+              onPressed: _remainingTickets <= 0 
+                ? null 
+                : () {
+                    // Start a new session and navigate to scratch card screen
+                    sessionProvider.startSession(_scratchCardCount);
+                    Navigator.pushNamed(
+                      context, 
+                      AppRoutes.scratchCard, 
+                      arguments: _scratchCardCount
+                    );
+                  },
               icon: const Icon(Icons.play_arrow),
               label: const Text('Inizia Gioco'),
               style: ElevatedButton.styleFrom(

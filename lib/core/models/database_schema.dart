@@ -18,6 +18,8 @@ class DatabaseSchema {
   static const String prizeIdColumn = 'id';
   static const String prizeNameColumn = 'name';
   static const String prizeProbabilityColumn = 'probability';
+  static const String prizeMaxOccurrencesColumn = 'max_occurrences';
+  static const String prizeCurrentOccurrencesColumn = 'current_occurrences';
   static const String prizeCreatedAtColumn = 'created_at';
   static const String prizeUpdatedAtColumn = 'updated_at';
 
@@ -53,6 +55,8 @@ class DatabaseSchema {
         $prizeIdColumn INTEGER PRIMARY KEY AUTOINCREMENT,
         $prizeNameColumn TEXT NOT NULL,
         $prizeProbabilityColumn REAL NOT NULL,
+        $prizeMaxOccurrencesColumn INTEGER NOT NULL DEFAULT 0,
+        $prizeCurrentOccurrencesColumn INTEGER NOT NULL DEFAULT 0,
         $prizeCreatedAtColumn TEXT NOT NULL,
         $prizeUpdatedAtColumn TEXT NOT NULL
       )
@@ -96,10 +100,10 @@ class DatabaseSchema {
 
   // Default prizes
   static List<Map<String, dynamic>> defaultPrizes = [
-    {'name': '25 Punti Fedelity Card', 'probability': 0.765},
-    {'name': '50 Punti Fedelity Card', 'probability': 0.45},
-    {'name': '100 Punti Fedelity Card', 'probability': 0.25},
-    {'name': 'Premio Jolly', 'probability': 0.024},
-    {'name': 'Super Premio Jolly', 'probability': 0.012},
+    {'name': '25 Punti Fedelity Card', 'probability': 0.765, 'max_occurrences': 20, 'current_occurrences': 0},
+    {'name': '50 Punti Fedelity Card', 'probability': 0.45, 'max_occurrences': 10, 'current_occurrences': 0},
+    {'name': '100 Punti Fedelity Card', 'probability': 0.25, 'max_occurrences': 5, 'current_occurrences': 0},
+    {'name': 'Premio Jolly', 'probability': 0.024, 'max_occurrences': 2, 'current_occurrences': 0},
+    {'name': 'Super Premio Jolly', 'probability': 0.012, 'max_occurrences': 1, 'current_occurrences': 0},
   ];
 }

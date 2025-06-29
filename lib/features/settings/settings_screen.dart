@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/auth_provider.dart';
 import '../../core/models/prize_provider.dart';
 import '../../core/models/database_schema.dart';
+import '../../core/models/session_provider.dart';
 import '../../core/repositories/data_repository.dart';
 import '../../config/routes.dart';
 import '../../shared/constants/app_constants.dart';
@@ -91,6 +92,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildPrizeSettings(),
           const SizedBox(height: 16),
           _buildPrizeHistory(),
+          const SizedBox(height: 16),
+          _buildResetSection(context),
         ],
       ),
     );
@@ -113,6 +116,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildPrizeSettings(),
           const SizedBox(height: 16),
           _buildPrizeHistory(),
+          const SizedBox(height: 16),
+          _buildResetSection(context),
         ],
       ),
     );
@@ -248,8 +253,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     final successRemaining = await _dataRepository.setRemainingScratcchCards(remainingCards);
 
                     if (successTotal && successRemaining) {
+                      // Recalculate probabilities based on the new total scratch cards
+                      final prizeProvider = Provider.of<PrizeProvider>(context, listen: false);
+                      await prizeProvider.recalculateProbabilities();
+
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Configurazione biglietti aggiornata')),
+                        const SnackBar(content: Text('Configurazione biglietti aggiornata e probabilità ricalcolate')),
                       );
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -304,7 +313,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 final prize = prizes[index];
                 return ListTile(
                   title: Text(prize['name'] as String),
-                  subtitle: Text('Probabilità: ${prize['probability']}%'),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Probabilità: ${prize['probability'].toStringAsFixed(2)}% (calcolata automaticamente)'),
+                      Text('Vincite: ${prize['current_occurrences']}/${prize['max_occurrences']}'),
+                    ],
+                  ),
+                  isThreeLine: true,
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -356,13 +372,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showAddEditPrizeDialog(BuildContext context, {int? index}) {
     final prizeProvider = Provider.of<PrizeProvider>(context, listen: false);
     final TextEditingController nameController = TextEditingController();
-    final TextEditingController probabilityController = TextEditingController();
+    final TextEditingController maxOccurrencesController = TextEditingController();
 
     // If editing an existing prize, pre-fill the controllers
     if (index != null) {
       final prize = prizeProvider.prizes[index];
       nameController.text = prize['name'] as String;
-      probabilityController.text = (prize['probability'] as double).toString();
+      maxOccurrencesController.text = (prize['max_occurrences'] as int).toString();
+    } else {
+      // Default value for new prizes
+      maxOccurrencesController.text = '1';
     }
 
     showDialog(
@@ -381,12 +400,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 8),
             TextField(
-              controller: probabilityController,
+              controller: maxOccurrencesController,
               decoration: const InputDecoration(
-                labelText: 'Probabilità (%)',
-                hintText: 'Es. 20',
+                labelText: 'Numero massimo di vincite',
+                hintText: 'Es. 5',
               ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'La probabilità di vincita verrà calcolata automaticamente come rapporto tra il numero massimo di vincite e il numero totale di biglietti.',
+              style: TextStyle(
+                fontStyle: FontStyle.italic,
+                fontSize: 12,
+              ),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -399,7 +427,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onPressed: () async {
               // Validate inputs
               final name = nameController.text.trim();
-              final probabilityText = probabilityController.text.trim();
+              final maxOccurrencesText = maxOccurrencesController.text.trim();
 
               if (name.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -408,10 +436,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 return;
               }
 
-              final double? probability = double.tryParse(probabilityText);
-              if (probability == null || probability <= 0 || probability > 100) {
+              final int? maxOccurrences = int.tryParse(maxOccurrencesText);
+              if (maxOccurrences == null || maxOccurrences <= 0) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Inserisci una probabilità valida (0-100)')),
+                  const SnackBar(content: Text('Inserisci un numero valido di vincite massime')),
+                );
+                return;
+              }
+
+              // Get total scratch cards to validate max occurrences
+              final dataRepository = DataRepository();
+              final totalScratchCards = await dataRepository.getScratchCardCount();
+
+              // Calculate total max occurrences across all prizes
+              int totalMaxOccurrences = 0;
+              for (var prize in prizeProvider.prizes) {
+                if (index != null && prize['id'] == prizeProvider.prizes[index]['id']) {
+                  // Skip the current prize being edited
+                  continue;
+                }
+                totalMaxOccurrences += prize['max_occurrences'] as int;
+              }
+              totalMaxOccurrences += maxOccurrences;
+
+              // Check if total max occurrences exceeds total scratch cards
+              if (totalMaxOccurrences > totalScratchCards) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Il numero totale di premi (${totalMaxOccurrences}) non può superare il numero totale di biglietti (${totalScratchCards})')),
                 );
                 return;
               }
@@ -419,11 +470,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // Save the prize
               if (index == null) {
                 // Add new prize
-                await prizeProvider.addPrize(name, probability);
+                await prizeProvider.addPrize(name, maxOccurrences);
               } else {
                 // Update existing prize
                 final prize = prizeProvider.prizes[index];
-                await prizeProvider.updatePrize(prize['id'] as int, name, probability);
+                await prizeProvider.updatePrize(prize['id'] as int, name, maxOccurrences);
               }
 
               // Check if total probability exceeds 100%
@@ -600,6 +651,111 @@ void _showClearHistoryDialog(BuildContext context) {
                 foregroundColor: Theme.of(context).colorScheme.error,
               ),
               child: const Text('Cancella'),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Widget _buildResetSection(BuildContext context) {
+  return AppCard(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionTitle(title: 'Reset Totale'),
+        const SizedBox(height: 8),
+        const Text(
+          'Questa operazione ripristinerà tutti i valori del database e della sessione a quelli di default. '
+          'Tutti i dati verranno cancellati e non potranno essere recuperati.',
+          style: TextStyle(
+            color: Colors.red,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 16),
+        ElevatedButton.icon(
+          icon: const Icon(Icons.warning_amber_rounded),
+          label: const Text('Reset Totale'),
+          onPressed: () {
+            _showResetConfirmationDialog(context);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+void _showResetConfirmationDialog(BuildContext context) {
+  final dataRepository = DataRepository();
+  final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+  final prizeProvider = Provider.of<PrizeProvider>(context, listen: false);
+  bool isLoading = false;
+
+  showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Conferma Reset Totale'),
+          content: isLoading
+              ? const SizedBox(height: 64, child: Center(child: CircularProgressIndicator()))
+              : const Text(
+                  'Sei sicuro di voler ripristinare tutti i valori a quelli di default? '
+                  'Questa operazione cancellerà tutti i dati, inclusi premi, storico e configurazioni. '
+                  'Questa azione non può essere annullata.',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+          actions: [
+            TextButton(
+              onPressed: isLoading ? null : () => Navigator.pop(context),
+              child: const Text('Annulla'),
+            ),
+            TextButton(
+              onPressed: isLoading
+                  ? null
+                  : () async {
+                      setState(() => isLoading = true);
+
+                      // Reset all data
+                      final success = await dataRepository.resetAllData();
+
+                      // Reset session state
+                      if (success) {
+                        await sessionProvider.resetSession();
+
+                        // Reload prize data
+                        await prizeProvider.loadPrizeData();
+
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Reset completato con successo')),
+                          );
+
+                          // Reload settings
+                          if (context.mounted) {
+                            _loadSettings();
+                          }
+                        }
+                      } else {
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Errore durante il reset')),
+                          );
+                        }
+                      }
+                    },
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+              child: const Text('Reset Totale'),
             ),
           ],
         ),
