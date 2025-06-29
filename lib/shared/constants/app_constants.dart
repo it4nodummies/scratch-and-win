@@ -4,8 +4,8 @@ class AppConstants {
   static const String pharmacyName = 'Farmacia Sammaruga';
   
   // Screen sizes for responsive design
-  static const double tabletBreakpoint = 600.0;
-  static const double desktopBreakpoint = 900.0;
+  static const double tabletBreakpoint = 1440.0;
+  static const double desktopBreakpoint = 3000.0;
   
   // Animation durations
   static const Duration shortAnimationDuration = Duration(milliseconds: 200);
@@ -14,7 +14,7 @@ class AppConstants {
   
   // Default values
   static const int defaultPinLength = 4;
-  static const int defaultScratchCardCount = 10;
+  static const int defaultScratchCardCount = 1;
   
   // Storage keys
   static const String pinStorageKey = 'pin_code';

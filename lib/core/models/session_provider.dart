@@ -12,6 +12,13 @@ class SessionProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _sessionPrizes = [];
   int? _currentSessionId;
 
+  @override
+  void dispose() {
+    // Clean up resources before disposing
+    _sessionPrizes.clear();
+    super.dispose();
+  }
+
   /// Whether a game session is currently active.
   bool get isSessionActive => _isSessionActive;
 
@@ -42,6 +49,7 @@ class SessionProvider extends ChangeNotifier {
   }
 
   /// Decrements the number of attempts remaining and checks if the screen should be locked.
+  /// Also decrements the remaining scratch cards count in the database.
   Future<void> decrementAttempts() async {
     if (_attemptsRemaining > 0) {
       _attemptsRemaining--;
@@ -56,6 +64,9 @@ class SessionProvider extends ChangeNotifier {
           _totalAttempts - _attemptsRemaining
         );
       }
+
+      // Decrement the remaining scratch cards count
+      await _dataRepository.decrementRemainingScratcchCards();
 
       notifyListeners();
     }
@@ -128,7 +139,6 @@ class SessionProvider extends ChangeNotifier {
           _sessionPrizes = history.map((prize) {
             return {
               'name': prize['prize_name'],
-              'value': prize['prize_value'] ?? '', // Use prize_value if available, empty string otherwise
               'timestamp': prize['timestamp'],
             };
           }).toList();

@@ -37,6 +37,8 @@ class _ScratchCardWidgetState extends State<ScratchCardWidget> {
   bool _isResultShown = false;
   bool _thresholdReached = false;
   final GlobalKey<ScratcherState> _scratcherKey = GlobalKey<ScratcherState>();
+  Future<void>? _showResultFuture;
+  bool _isActive = true;
 
   void _playScratchSound() {
     if (widget.playSounds) {
@@ -64,14 +66,37 @@ class _ScratchCardWidgetState extends State<ScratchCardWidget> {
       });
       debugPrint('Threshold reached (checked via onChange): ${widget.threshold * 100}%');
       if (widget.autoShowResult) {
-        // Add 5 seconds delay before showing the result
-        Future.delayed(const Duration(seconds: 5), () {
-          if (mounted) {
-            _showResult();
-          }
-        });
+        // Cancel any existing future to avoid multiple callbacks
+        _showResultFuture = null;
+
+        // Only create a new future if the widget is still active
+        if (_isActive) {
+          // Add 5 seconds delay before showing the result
+          _showResultFuture = Future.delayed(const Duration(seconds: 5), () {
+            // Double-check that the widget is still mounted and active before updating state
+            if (mounted && _isActive) {
+              _showResult();
+            }
+          });
+        }
       }
     }
+  }
+
+  @override
+  void dispose() {
+    // Mark widget as inactive and cancel any pending futures
+    _isActive = false;
+
+    // Cancel the future properly to avoid assertion errors
+    if (_showResultFuture != null) {
+      // We can't directly cancel a Future in Dart, but we can ensure
+      // the callback won't execute by setting _isActive to false
+      // and explicitly setting the future to null
+      _showResultFuture = null;
+    }
+
+    super.dispose();
   }
 
   @override

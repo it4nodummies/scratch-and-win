@@ -5,6 +5,7 @@ import '../../core/models/prize_provider.dart';
 import '../../shared/constants/app_constants.dart';
 import '../../shared/widgets/app_scaffold.dart';
 import '../../shared/widgets/responsive_layout.dart';
+// Make sure ResponsiveExtension is imported
 import '../../config/theme.dart';
 import '../../config/routes.dart';
 import 'scratch_card_widget.dart';
@@ -31,6 +32,8 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
   String _prizeValue = '';
   bool _showConfetti = false;
   late GameLogic _gameLogic;
+  bool _disposed = false; // Add disposal flag
+  int _scratchCardKey = 0; // Add a key to force widget recreation
 
   @override
   void initState() {
@@ -40,20 +43,30 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
 
     // Ensure we have an active session
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
-      final prizeProvider = Provider.of<PrizeProvider>(context, listen: false);
+      if (!_disposed && mounted) { // Check disposal and mounted state
+        final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+        final prizeProvider = Provider.of<PrizeProvider>(context, listen: false);
 
-      // Initialize game logic
-      _gameLogic = GameLogic(prizeProvider);
+        // Initialize game logic
+        _gameLogic = GameLogic(prizeProvider);
 
-      if (!sessionProvider.isSessionActive) {
-        // If no active session, start one with the provided attempts
-        sessionProvider.startSession(_attemptsRemaining);
+        if (!sessionProvider.isSessionActive) {
+          // If no active session, start one with the provided attempts
+          sessionProvider.startSession(_attemptsRemaining);
+        }
       }
     });
   }
 
+  @override
+  void dispose() {
+    _disposed = true; // Set disposal flag
+    super.dispose();
+  }
+
   void _onScratchComplete() {
+    if (_disposed || !mounted) return; // Check disposal and mounted state
+
     // Get the session provider
     final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
 
@@ -69,26 +82,34 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
       sessionProvider.addPrize(prizeName, prizeValue);
 
       // Start confetti animation for winners
+      if (mounted && !_disposed) {
+        setState(() {
+          _showConfetti = true;
+        });
+      }
+    }
+
+    if (mounted && !_disposed) {
       setState(() {
-        _showConfetti = true;
+        _isScratched = true;
+        _isWinner = isWinner;
+        _prizeName = prizeName;
+        _prizeValue = prizeValue;
+        _attemptsRemaining = sessionProvider.attemptsRemaining;
       });
     }
 
-    setState(() {
-      _isScratched = true;
-      _isWinner = isWinner;
-      _prizeName = prizeName;
-      _prizeValue = prizeValue;
-      _attemptsRemaining = sessionProvider.attemptsRemaining;
-    });
-
     // Show result dialog after a short delay
-    Future.delayed(const Duration(milliseconds: 500), () {
-      _showResultDialog();
+    Future.delayed(const Duration(milliseconds: 3500), () {
+      if (mounted && !_disposed) { // Check before calling _showResultDialog
+        _showResultDialog();
+      }
     });
   }
 
   void _showResultDialog() {
+    if (_disposed || !mounted) return; // Additional safety check
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -112,7 +133,7 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
               Navigator.of(context).pop();
 
               // Stop confetti animation
-              if (_showConfetti) {
+              if (_showConfetti && mounted && !_disposed) {
                 setState(() {
                   _showConfetti = false;
                 });
@@ -120,12 +141,15 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
 
               // Reset for next attempt if attempts remain
               if (_attemptsRemaining > 0) {
-                setState(() {
-                  _isScratched = false;
-                  _isWinner = false;
-                  _prizeName = '';
-                  _prizeValue = '';
-                });
+                if (mounted && !_disposed) {
+                  setState(() {
+                    _isScratched = false;
+                    _isWinner = false;
+                    _prizeName = '';
+                    _prizeValue = '';
+                    _scratchCardKey++; // Increment key to rebuild the widget
+                  });
+                }
               } else {
                 // Show game over dialog when no attempts remain
                 _showGameOverDialog();
@@ -139,16 +163,20 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
   }
 
   void _showGameOverDialog() {
+    if (_disposed || !mounted) return; // Safety check
+
     final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
 
     // Only lock the screen, no need to decrement attempts again as it's already at 0
     if (!sessionProvider.isScreenLocked) {
       // This ensures the screen is locked without decrementing attempts again
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        sessionProvider.unlockScreen(); // First unlock to ensure we can set it again
-        setState(() {
-          _attemptsRemaining = 0; // Ensure local state is consistent
-        });
+        if (mounted && !_disposed) {
+          sessionProvider.unlockScreen(); // First unlock to ensure we can set it again
+          setState(() {
+            _attemptsRemaining = 0; // Ensure local state is consistent
+          });
+        }
       });
     }
 
@@ -163,7 +191,9 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
             onPressed: () {
               Navigator.of(context).pop();
               // Navigate back to the operator screen
-              Navigator.of(context).pushReplacementNamed(AppRoutes.operator);
+              if (mounted && !_disposed) {
+                Navigator.of(context).pushReplacementNamed(AppRoutes.operator);
+              }
             },
             child: const Text('OK'),
           ),
@@ -174,12 +204,14 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final sessionProvider = Provider.of<SessionProvider>(context);
+    final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
 
-    // If screen is locked, navigate back to operator screen
-    if (sessionProvider.isScreenLocked) {
+    // If screen is locked and we are not in the middle of a scratch action, navigate away.
+    if (sessionProvider.isScreenLocked && !_isScratched) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.of(context).pushReplacementNamed(AppRoutes.operator);
+        if (mounted && !_disposed) {
+          Navigator.of(context).pushReplacementNamed(AppRoutes.operator);
+        }
       });
       return const Scaffold(
         body: Center(
@@ -225,9 +257,15 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
       children: [
         _buildAttemptsCounter(),
         const SizedBox(height: 16),
-        Expanded(child: _buildScratchCard()),
+        Expanded(
+          flex: 1,
+          child: _buildScratchCard()
+        ),
         const SizedBox(height: 16),
-        _buildPrizeDisplay(),
+        Expanded(
+          flex: 1,
+          child: _buildPrizeDisplay(),
+        ),
       ],
     );
   }
@@ -256,7 +294,7 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
   }
 
   Widget _buildAttemptsCounter() {
-    final sessionProvider = Provider.of<SessionProvider>(context);
+    final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
 
     return Container(
       padding: const EdgeInsets.all(8),
@@ -289,7 +327,7 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
 
   Widget _buildScratchCard() {
     return Container(
-      decoration: BoxDecoration(
+        decoration: BoxDecoration(
         color: AppTheme.scratchCardBaseColor,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
@@ -314,7 +352,7 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
                 Text(
                   _isWinner ? 'HAI VINTO!' : 'NON HAI VINTO',
                   style: TextStyle(
-                    fontSize: context.responsiveFontSize(32),
+                    fontSize: 32,
                     fontWeight: FontWeight.bold,
                     color: Colors.black,
                   ),
@@ -324,7 +362,7 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
                   Text(
                     _prizeName,
                     style: TextStyle(
-                      fontSize: context.responsiveFontSize(24),
+                      fontSize: 24,
                       fontWeight: FontWeight.bold,
                       color: Colors.black,
                     ),
@@ -334,7 +372,8 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
             ),
           )
         : ScratchCardWidget(
-            threshold: 0.5, // Reveal after 70% is scratched
+            key: ValueKey(_scratchCardKey), // Use the key here
+            threshold: 0.5, // Reveal after 50% is scratched
             onScratchComplete: _onScratchComplete,
             playSounds: true,
             autoShowResult: true, // Show result automatically when threshold is reached
@@ -342,7 +381,7 @@ class _ScratchCardScreenState extends State<ScratchCardScreen> {
               child: Text(
                 'Gratta qui!',
                 style: TextStyle(
-                  fontSize: context.responsiveFontSize(24),
+                  fontSize: 24,
                   fontWeight: FontWeight.bold,
                   color: Colors.black,
                 ),

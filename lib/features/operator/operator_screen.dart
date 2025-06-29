@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:pin_code_fields/pin_code_fields.dart';
 import '../../core/models/auth_provider.dart';
 import '../../core/models/session_provider.dart';
 import '../../shared/constants/app_constants.dart';
@@ -17,16 +18,28 @@ class OperatorScreen extends StatefulWidget {
 class _OperatorScreenState extends State<OperatorScreen> {
   int _scratchCardCount = AppConstants.defaultScratchCardCount;
 
+
+  @override
+  void dispose() {
+    // Remove the _pinController disposal code since it's no longer a class member
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     // Check if user is authenticated
     final authProvider = Provider.of<AuthProvider>(context);
-    final sessionProvider = Provider.of<SessionProvider>(context);
+    final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
 
     if (!authProvider.isAuthenticated) {
       // Redirect to auth screen if not authenticated
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pushReplacementNamed(context, AppRoutes.auth);
+        // Add a 'mounted' check to ensure the widget is still in the tree
+        // before attempting to navigate. This prevents errors during
+        // rapid screen transitions.
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, AppRoutes.auth);
+        }
       });
       // Return loading indicator while redirecting
       return const Scaffold(
@@ -93,18 +106,23 @@ class _OperatorScreenState extends State<OperatorScreen> {
       children: [
         Expanded(
           flex: 1,
-          child: Column(
-            children: [
-              if (sessionProvider.isSessionActive) 
-                _buildSessionStatus(sessionProvider),
-              Expanded(child: _buildScratchCardCounter(sessionProvider)),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                if (sessionProvider.isSessionActive)
+                  _buildSessionStatus(sessionProvider),
+                _buildScratchCardCounter(sessionProvider),
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
         ),
         const SizedBox(width: 24),
         Expanded(
           flex: 1,
-          child: _buildStartButton(sessionProvider),
+          child: Center(
+            child: _buildStartButton(sessionProvider),
+          ),
         ),
       ],
     );
@@ -117,7 +135,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
         color: Theme.of(context).colorScheme.primaryContainer,
         child: Column(
           children: [
-            const SectionTitle(title: 'Sessione Attiva'),
+            SectionTitle(title: 'Sessione Attiva'),
             Text(
               'Tentativi rimanenti: ${sessionProvider.attemptsRemaining}/${sessionProvider.totalAttempts}',
               style: Theme.of(context).textTheme.bodyLarge,
@@ -141,79 +159,97 @@ class _OperatorScreenState extends State<OperatorScreen> {
   }
 
   Widget _buildLockedScreen(BuildContext context, SessionProvider sessionProvider) {
-    return AppScaffold(
-      title: 'Sessione Bloccata',
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.lock_open),
-          tooltip: 'Sblocca schermo',
-          onPressed: () {
-            sessionProvider.unlockScreen();
-          },
-        ),
-        IconButton(
-          icon: const Icon(Icons.refresh),
-          tooltip: 'Termina sessione',
-          onPressed: () {
-            _showEndSessionDialog(context, sessionProvider);
-          },
-        ),
-      ],
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.lock,
-              size: 64,
-              color: Colors.red,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Tentativi Esauriti',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              AppConstants.noMoreAttemptsMessage,
-              style: Theme.of(context).textTheme.bodyLarge,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            if (sessionProvider.sessionPrizes.isNotEmpty) ...[
-              const SectionTitle(title: 'Premi Vinti'),
-              SizedBox(
-                height: 200,
-                child: ListView.builder(
-                  itemCount: sessionProvider.sessionPrizes.length,
-                  itemBuilder: (context, index) {
-                    final prize = sessionProvider.sessionPrizes[index];
-                    return ListTile(
-                      leading: const Icon(Icons.emoji_events, color: Colors.amber),
-                      title: Text(prize['name']),
-                      subtitle: Text(prize['value']),
-                    );
-                  },
-                ),
-              ),
-            ],
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () {
-                sessionProvider.endSession();
-              },
-              icon: const Icon(Icons.refresh),
-              label: const Text('Termina Sessione'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
-        ),
+  return AppScaffold(
+    title: 'Sessione Bloccata',
+    actions: [
+      IconButton(
+        icon: const Icon(Icons.lock_open),
+        tooltip: 'Sblocca schermo',
+        onPressed: () {
+          sessionProvider.unlockScreen();
+        },
       ),
-    );
-  }
+      IconButton(
+        icon: const Icon(Icons.refresh),
+        tooltip: 'Termina sessione',
+        onPressed: () {
+          _showEndSessionDialog(context, sessionProvider);
+        },
+      ),
+    ],
+    body: LayoutBuilder(
+      builder: (context, constraints) {
+        return Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 500, // Makes it comfortable on large screens
+                minHeight: constraints.maxHeight * 0.8, // Optionally adjust minHeight
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.lock,
+                    size: 64,
+                    color: Colors.red,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Tentativi Esauriti',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    AppConstants.noMoreAttemptsMessage,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  if (sessionProvider.sessionPrizes.isNotEmpty) ...[
+                    SectionTitle(title: 'Premi Vinti'),
+                    SizedBox(
+                      height: 200,
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        physics: const ClampingScrollPhysics(),
+                        itemCount: sessionProvider.sessionPrizes.length,
+                        itemBuilder: (context, index) {
+                          final prize = sessionProvider.sessionPrizes[index];
+                          return ListTile(
+                            leading: const Icon(Icons.emoji_events, color: Colors.amber),
+                            title: Text(prize['name'] ?? ''),
+                            subtitle: Text(prize['value'] ?? ''),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      // _showPinVerificationDialog(context, sessionProvider);
+                      _showEndSessionDialog(context, sessionProvider);
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Termina Sessione'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
 
   void _showEndSessionDialog(BuildContext context, SessionProvider sessionProvider) {
     showDialog(
@@ -233,8 +269,8 @@ class _OperatorScreenState extends State<OperatorScreen> {
           ),
           TextButton(
             onPressed: () {
-              sessionProvider.endSession();
               Navigator.of(context).pop();
+              _showPinVerificationDialog(context, sessionProvider);
             },
             child: const Text('Termina'),
           ),
@@ -243,15 +279,127 @@ class _OperatorScreenState extends State<OperatorScreen> {
     );
   }
 
+  void _showPinVerificationDialog(BuildContext context, SessionProvider sessionProvider) {
+    // Create a LOCAL controller for this dialog only
+    final TextEditingController pinController = TextEditingController();
+    bool isVerifying = false;
+    String errorMessage = '';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text('Inserisci PIN'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Inserisci il PIN per terminare la sessione'),
+                  const SizedBox(height: 16),
+                  PinCodeTextField(
+                    appContext: context,
+                    length: AppConstants.defaultPinLength,
+                    controller: pinController, // Use local controller
+                    obscureText: true,
+                    animationType: AnimationType.fade,
+                    pinTheme: PinTheme(
+                      shape: PinCodeFieldShape.box,
+                      borderRadius: BorderRadius.circular(8),
+                      fieldHeight: 50,
+                      fieldWidth: 40,
+                      activeFillColor: Colors.white,
+                      inactiveFillColor: Colors.white,
+                      selectedFillColor: Colors.white,
+                      activeColor: Theme.of(context).colorScheme.primary,
+                      inactiveColor: Colors.grey.shade300,
+                      selectedColor: Theme.of(context).colorScheme.primary,
+                    ),
+                    keyboardType: TextInputType.number,
+                    enableActiveFill: true,
+                    onChanged: (value) {
+                      setState(() {
+                        errorMessage = '';
+                      });
+                    },
+                  ),
+                  if (errorMessage.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      errorMessage,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                  if (isVerifying) ...[
+                    const SizedBox(height: 16),
+                    const CircularProgressIndicator(),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isVerifying
+                    ? null
+                    : () {
+                        Navigator.of(dialogContext).pop();
+                      },
+                child: const Text('Annulla'),
+              ),
+              TextButton(
+                onPressed: isVerifying
+                    ? null
+                    : () async {
+                        if (pinController.text.length < AppConstants.defaultPinLength) {
+                          setState(() {
+                            errorMessage = 'Inserisci il PIN completo';
+                          });
+                          return;
+                        }
+
+                        setState(() {
+                          isVerifying = true;
+                        });
+
+                        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                        final success = await authProvider.authenticate(pinController.text);
+
+                        if (success) {
+                          sessionProvider.endSession();
+                          Navigator.of(dialogContext).pop();
+                        } else {
+                          setState(() {
+                            isVerifying = false;
+                            errorMessage = 'PIN non valido. Riprova.';
+                          });
+                        }
+                      },
+                child: const Text('Conferma'),
+              ),
+            ],
+          );
+        },
+      ),
+    ).then((_) {
+      // Dispose the LOCAL controller when dialog closes
+      pinController.dispose();
+    });
+  }
+
   Widget _buildScratchCardCounter(SessionProvider sessionProvider) {
     // If session is active, disable the counter
     final bool isEnabled = !sessionProvider.isSessionActive;
 
     return AppCard(
+
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const SectionTitle(title: 'Numero di Gratta e Vinci'),
+          SectionTitle(title: 'Numero di Gratta e Vinci'),
           const SizedBox(height: 16),
           Text(
             sessionProvider.isSessionActive
@@ -280,7 +428,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
               Text(
                 '$_scratchCardCount',
                 style: TextStyle(
-                  fontSize: context.responsiveFontSize(32),
+                  fontSize: 32,
                   fontWeight: FontWeight.bold,
                   color: Theme.of(context).colorScheme.primary,
                 ),

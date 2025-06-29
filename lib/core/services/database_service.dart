@@ -26,7 +26,7 @@ class DatabaseService {
   Future<Database> _initDatabase() async {
     // Get the database path
     String path = join(await getDatabasesPath(), 'gratta_e_vinci.db');
-    
+
     // Open the database
     return await openDatabase(
       path,
@@ -43,10 +43,10 @@ class DatabaseService {
     await db.execute(DatabaseSchema.createPrizesTable());
     await db.execute(DatabaseSchema.createSessionsTable());
     await db.execute(DatabaseSchema.createPrizeHistoryTable());
-    
+
     // Insert default config values
     await _insertDefaultConfig(db);
-    
+
     // Insert default prizes
     await _insertDefaultPrizes(db);
   }
@@ -62,7 +62,7 @@ class DatabaseService {
   /// Inserts default configuration values.
   Future<void> _insertDefaultConfig(Database db) async {
     Batch batch = db.batch();
-    
+
     DatabaseSchema.defaultConfig.forEach((key, value) {
       batch.insert(
         DatabaseSchema.configTable,
@@ -72,7 +72,7 @@ class DatabaseService {
         },
       );
     });
-    
+
     await batch.commit(noResult: true);
   }
 
@@ -80,7 +80,7 @@ class DatabaseService {
   Future<void> _insertDefaultPrizes(Database db) async {
     Batch batch = db.batch();
     final now = DateTime.now().toIso8601String();
-    
+
     for (var prize in DatabaseSchema.defaultPrizes) {
       batch.insert(
         DatabaseSchema.prizesTable,
@@ -92,7 +92,7 @@ class DatabaseService {
         },
       );
     }
-    
+
     await batch.commit(noResult: true);
   }
 
@@ -105,24 +105,24 @@ class DatabaseService {
       where: '${DatabaseSchema.configKeyColumn} = ?',
       whereArgs: [key],
     );
-    
+
     if (maps.isNotEmpty) {
       return maps.first[DatabaseSchema.configValueColumn] as String?;
     }
-    
+
     return null;
   }
 
   /// Sets a configuration value.
   Future<void> setConfigValue(String key, String value) async {
     final db = await database;
-    
+
     // Check if the key exists
     final count = Sqflite.firstIntValue(await db.rawQuery(
       'SELECT COUNT(*) FROM ${DatabaseSchema.configTable} WHERE ${DatabaseSchema.configKeyColumn} = ?',
       [key],
     ));
-    
+
     if (count != null && count > 0) {
       // Update existing value
       await db.update(
@@ -153,7 +153,7 @@ class DatabaseService {
   Future<int> addPrize(String name, double probability) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
-    
+
     return await db.insert(
       DatabaseSchema.prizesTable,
       {
@@ -169,7 +169,7 @@ class DatabaseService {
   Future<int> updatePrize(int id, String name, double probability) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
-    
+
     return await db.update(
       DatabaseSchema.prizesTable,
       {
@@ -185,7 +185,7 @@ class DatabaseService {
   /// Deletes a prize.
   Future<int> deletePrize(int id) async {
     final db = await database;
-    
+
     return await db.delete(
       DatabaseSchema.prizesTable,
       where: '${DatabaseSchema.prizeIdColumn} = ?',
@@ -197,7 +197,7 @@ class DatabaseService {
   Future<int> startSession(int totalAttempts) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
-    
+
     return await db.insert(
       DatabaseSchema.sessionTable,
       {
@@ -212,7 +212,7 @@ class DatabaseService {
   /// Updates a session with attempts used.
   Future<int> updateSessionAttempts(int sessionId, int attemptsUsed) async {
     final db = await database;
-    
+
     return await db.update(
       DatabaseSchema.sessionTable,
       {DatabaseSchema.sessionAttemptsUsedColumn: attemptsUsed},
@@ -225,7 +225,7 @@ class DatabaseService {
   Future<int> endSession(int sessionId) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
-    
+
     return await db.update(
       DatabaseSchema.sessionTable,
       {
@@ -246,11 +246,11 @@ class DatabaseService {
       whereArgs: [1],
       limit: 1,
     );
-    
+
     if (maps.isNotEmpty) {
       return maps.first;
     }
-    
+
     return null;
   }
 
@@ -258,7 +258,7 @@ class DatabaseService {
   Future<int> recordPrizeWin(int sessionId, int? prizeId, String prizeName, [String? customer]) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
-    
+
     return await db.insert(
       DatabaseSchema.prizeHistoryTable,
       {
@@ -274,14 +274,13 @@ class DatabaseService {
   /// Gets all prize history.
   Future<List<Map<String, dynamic>>> getPrizeHistory() async {
     final db = await database;
-    
+
     return await db.rawQuery('''
       SELECT 
         h.${DatabaseSchema.historyIdColumn},
         h.${DatabaseSchema.historyPrizeNameColumn},
         h.${DatabaseSchema.historyTimestampColumn},
-        h.${DatabaseSchema.historyCustomerColumn},
-        s.${DatabaseSchema.sessionStartTimeColumn}
+        h.${DatabaseSchema.historyCustomerColumn}
       FROM ${DatabaseSchema.prizeHistoryTable} h
       LEFT JOIN ${DatabaseSchema.sessionTable} s
       ON h.${DatabaseSchema.historySessionIdColumn} = s.${DatabaseSchema.sessionIdColumn}
@@ -289,16 +288,23 @@ class DatabaseService {
     ''');
   }
 
+  /// Delete all prize history.
+  Future<void> deleteAllPrizeHistory() async {
+    final db = await database;
+    // This deletes all rows but keeps the table (not dropping the table)
+    await db.delete(DatabaseSchema.prizeHistoryTable);
+  }
+
   /// Exports all data as a JSON-compatible map.
   Future<Map<String, dynamic>> exportData() async {
     final db = await database;
-    
+
     // Get all data from each table
     final config = await db.query(DatabaseSchema.configTable);
     final prizes = await db.query(DatabaseSchema.prizesTable);
     final sessions = await db.query(DatabaseSchema.sessionTable);
     final history = await db.query(DatabaseSchema.prizeHistoryTable);
-    
+
     // Return as a structured map
     return {
       'config': config,

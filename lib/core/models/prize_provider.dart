@@ -7,6 +7,14 @@ class PrizeProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _prizes = [];
   List<Map<String, dynamic>> _prizeHistory = [];
 
+  @override
+  void dispose() {
+    // Clean up resources before disposing
+    _prizes.clear();
+    _prizeHistory.clear();
+    super.dispose();
+  }
+
   /// The list of configured prizes.
   List<Map<String, dynamic>> get prizes => _prizes;
 
@@ -88,8 +96,8 @@ class PrizeProvider extends ChangeNotifier {
 
   /// Clears all prize history.
   Future<void> clearHistory() async {
-    // This would require adding a method to the database service to clear history
-    // For now, we'll just reload the data
+    await _dataRepository.deletePrizeHistory();
+
     await loadPrizeData();
     notifyListeners();
   }

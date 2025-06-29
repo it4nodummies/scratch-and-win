@@ -69,7 +69,7 @@ class _SplashScreenState extends State<SplashScreen> {
             Text(
               AppConstants.pharmacyName,
               style: TextStyle(
-                fontSize: context.responsiveFontSize(28),
+                fontSize: 28,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
               ),
@@ -80,7 +80,7 @@ class _SplashScreenState extends State<SplashScreen> {
             Text(
               "Gratta e Vinci",
               style: TextStyle(
-                fontSize: context.responsiveFontSize(22),
+                fontSize: 22,
                 fontWeight: FontWeight.w500,
                 color: Colors.white,
               ),

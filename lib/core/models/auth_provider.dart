@@ -8,6 +8,13 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
   String _errorMessage = '';
 
+  @override
+  void dispose() {
+    // Clean up resources before disposing
+    _errorMessage = '';
+    super.dispose();
+  }
+
   /// Whether the user is currently authenticated.
   bool get isAuthenticated => _isAuthenticated;
 
