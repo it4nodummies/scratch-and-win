@@ -8,6 +8,7 @@ import '../../shared/constants/app_constants.dart';
 import '../../shared/widgets/app_scaffold.dart';
 import '../../shared/widgets/responsive_layout.dart';
 import '../../config/routes.dart';
+import '../../l10n/app_localizations.dart';
 
 class OperatorScreen extends StatefulWidget {
   const OperatorScreen({super.key});
@@ -77,12 +78,12 @@ class _OperatorScreenState extends State<OperatorScreen> {
     }
 
     return AppScaffold(
-      title: 'Pannello Operatore',
+      title: AppLocalizations.of(context).translate('operator_panel'),
       actions: [
         if (sessionProvider.isSessionActive)
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Termina sessione',
+            tooltip: AppLocalizations.of(context).translate('end_session'),
             onPressed: () {
               _showEndSessionDialog(context, sessionProvider);
             },
@@ -157,9 +158,11 @@ class _OperatorScreenState extends State<OperatorScreen> {
         color: Theme.of(context).colorScheme.primaryContainer,
         child: Column(
           children: [
-            SectionTitle(title: 'Sessione Attiva'),
+            SectionTitle(title: AppLocalizations.of(context).translate('active_session')),
             Text(
-              'Tentativi rimanenti: ${sessionProvider.attemptsRemaining}/${sessionProvider.totalAttempts}',
+              AppLocalizations.of(context).translate('remaining_attempts')
+                .replaceAll('{remaining}', sessionProvider.attemptsRemaining.toString())
+                .replaceAll('{total}', sessionProvider.totalAttempts.toString()),
               style: Theme.of(context).textTheme.bodyLarge,
             ),
             const SizedBox(height: 8),
@@ -172,7 +175,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                 );
               },
               icon: const Icon(Icons.play_arrow),
-              label: const Text('Continua Sessione'),
+              label: Text(AppLocalizations.of(context).translate('continue_session')),
             ),
           ],
         ),
@@ -182,18 +185,18 @@ class _OperatorScreenState extends State<OperatorScreen> {
 
   Widget _buildLockedScreen(BuildContext context, SessionProvider sessionProvider) {
   return AppScaffold(
-    title: 'Sessione Bloccata',
+    title: AppLocalizations.of(context).translate('session_locked'),
     actions: [
       IconButton(
         icon: const Icon(Icons.lock_open),
-        tooltip: 'Sblocca schermo',
+        tooltip: AppLocalizations.of(context).translate('unlock_screen'),
         onPressed: () {
           sessionProvider.unlockScreen();
         },
       ),
       IconButton(
         icon: const Icon(Icons.refresh),
-        tooltip: 'Termina sessione',
+        tooltip: AppLocalizations.of(context).translate('end_session'),
         onPressed: () {
           _showEndSessionDialog(context, sessionProvider);
         },
@@ -221,7 +224,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Tentativi Esauriti',
+                    AppLocalizations.of(context).translate('attempts_exhausted'),
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
                   const SizedBox(height: 8),
@@ -232,7 +235,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                   ),
                   const SizedBox(height: 24),
                   if (sessionProvider.sessionPrizes.isNotEmpty) ...[
-                    SectionTitle(title: 'Premi Vinti'),
+                    SectionTitle(title: AppLocalizations.of(context).translate('won_prizes')),
                     SizedBox(
                       height: 200,
                       child: ListView.builder(
@@ -257,7 +260,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                       _showEndSessionDialog(context, sessionProvider);
                     },
                     icon: const Icon(Icons.refresh),
-                    label: const Text('Termina Sessione'),
+                    label: Text(AppLocalizations.of(context).translate('end_session')),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red,
                       foregroundColor: Colors.white,
@@ -277,24 +280,23 @@ class _OperatorScreenState extends State<OperatorScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Terminare la sessione?'),
-        content: const Text(
-          'Sei sicuro di voler terminare la sessione corrente? '
-          'Tutti i dati della sessione andranno persi.'
+        title: Text(AppLocalizations.of(context).translate('end_session_question')),
+        content: Text(
+          AppLocalizations.of(context).translate('end_session_confirmation')
         ),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
             },
-            child: const Text('Annulla'),
+            child: Text(AppLocalizations.of(context).translate('cancel')),
           ),
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
               _showPinVerificationDialog(context, sessionProvider);
             },
-            child: const Text('Termina'),
+            child: Text(AppLocalizations.of(context).translate('end')),
           ),
         ],
       ),
@@ -313,12 +315,12 @@ class _OperatorScreenState extends State<OperatorScreen> {
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setState) {
           return AlertDialog(
-            title: const Text('Inserisci PIN'),
+            title: Text(AppLocalizations.of(context).translate('enter_pin')),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Inserisci il PIN per terminare la sessione'),
+                  Text(AppLocalizations.of(context).translate('enter_pin_to_end_session')),
                   const SizedBox(height: 16),
                   PinCodeTextField(
                     appContext: context,
@@ -370,7 +372,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                     : () {
                         Navigator.of(dialogContext).pop();
                       },
-                child: const Text('Annulla'),
+                child: Text(AppLocalizations.of(context).translate('cancel')),
               ),
               TextButton(
                 onPressed: isVerifying
@@ -378,7 +380,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                     : () async {
                         if (pinController.text.length < AppConstants.defaultPinLength) {
                           setState(() {
-                            errorMessage = 'Inserisci il PIN completo';
+                            errorMessage = AppLocalizations.of(context).translate('enter_complete_pin');
                           });
                           return;
                         }
@@ -396,11 +398,11 @@ class _OperatorScreenState extends State<OperatorScreen> {
                         } else {
                           setState(() {
                             isVerifying = false;
-                            errorMessage = 'PIN non valido. Riprova.';
+                            errorMessage = AppLocalizations.of(context).translate('invalid_pin');
                           });
                         }
                       },
-                child: const Text('Conferma'),
+                child: Text(AppLocalizations.of(context).translate('confirm')),
               ),
             ],
           );
@@ -421,12 +423,12 @@ class _OperatorScreenState extends State<OperatorScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SectionTitle(title: 'Numero di Gratta e Vinci'),
+          SectionTitle(title: AppLocalizations.of(context).translate('scratch_card_number')),
           const SizedBox(height: 16),
           Text(
             sessionProvider.isSessionActive
-                ? 'Sessione attiva con ${sessionProvider.totalAttempts} tentativi'
-                : 'Seleziona quanti gratta e vinci il cliente può utilizzare:',
+                ? AppLocalizations.of(context).translate('active_session_with_attempts').replaceAll('{attempts}', sessionProvider.totalAttempts.toString())
+                : AppLocalizations.of(context).translate('select_scratch_cards'),
             style: Theme.of(context).textTheme.bodyMedium,
             textAlign: TextAlign.center,
           ),
@@ -481,15 +483,17 @@ class _OperatorScreenState extends State<OperatorScreen> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SectionTitle(
-            title: sessionProvider.isSessionActive ? 'Sessione in Corso' : 'Inizia Sessione'
+            title: sessionProvider.isSessionActive 
+                ? AppLocalizations.of(context).translate('session_in_progress') 
+                : AppLocalizations.of(context).translate('start_session')
           ),
           const SizedBox(height: 16),
           Text(
             sessionProvider.isSessionActive
-                ? 'Una sessione è già attiva. Puoi continuarla o terminarla.'
+                ? AppLocalizations.of(context).translate('session_already_active')
                 : _remainingTickets <= 0
-                    ? 'Non ci sono biglietti rimanenti. Impossibile iniziare una nuova sessione.'
-                    : 'Premi il pulsante per iniziare la sessione di gioco:',
+                    ? AppLocalizations.of(context).translate('no_remaining_tickets')
+                    : AppLocalizations.of(context).translate('press_button_to_start'),
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: _remainingTickets <= 0 && !sessionProvider.isSessionActive
                   ? Theme.of(context).colorScheme.error
@@ -511,7 +515,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                     );
                   },
                   icon: const Icon(Icons.play_arrow),
-                  label: const Text('Continua'),
+                  label: Text(AppLocalizations.of(context).translate('continue')),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 24,
@@ -525,7 +529,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                     _showEndSessionDialog(context, sessionProvider);
                   },
                   icon: const Icon(Icons.stop),
-                  label: const Text('Termina'),
+                  label: Text(AppLocalizations.of(context).translate('end')),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 24,
@@ -551,7 +555,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                     );
                   },
               icon: const Icon(Icons.play_arrow),
-              label: const Text('Inizia Gioco'),
+              label: Text(AppLocalizations.of(context).translate('start_game')),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 32,
