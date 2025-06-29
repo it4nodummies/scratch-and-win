@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:intl/intl.dart';
 import '../../core/models/prize_provider.dart';
+import '../../core/repositories/data_repository.dart';
 
 /// Service for handling the game logic of the scratch card game.
 class GameLogic {
@@ -20,11 +21,11 @@ class GameLogic {
   /// - 'prizeName': The name of the prize won (empty if not a winner)
   /// - 'prizeValue': The value of the prize won (empty if not a winner)
   Map<String, dynamic> determineResult() {
-    // Get the list of prizes
-    final prizes = _prizeProvider.prizes;
+    // Get the list of available prizes (those that haven't reached their maximum occurrences)
+    final availablePrizes = _prizeProvider.availablePrizes;
 
-    // If there are no prizes configured, the user can't win
-    if (prizes.isEmpty) {
+    // If there are no available prizes, the user can't win
+    if (availablePrizes.isEmpty) {
       return {
         'isWinner': false,
         'prizeName': '',
@@ -34,7 +35,7 @@ class GameLogic {
 
     // Calculate the total probability of winning
     double totalWinProbability = 0;
-    for (final prize in prizes) {
+    for (final prize in availablePrizes) {
       totalWinProbability += prize['probability'] as double;
     }
 
@@ -57,7 +58,7 @@ class GameLogic {
 
     // The user wins! Determine which prize they won
     double cumulativeProbability = 0;
-    for (final prize in prizes) {
+    for (final prize in availablePrizes) {
       cumulativeProbability += prize['probability'] as double;
       if (randomValue <= cumulativeProbability) {
         // This is the prize the user won
@@ -96,6 +97,28 @@ class GameLogic {
   /// Returns true if the probabilities are valid, false otherwise.
   Future<bool> validateProbabilities() async {
     return await _prizeProvider.validateProbabilities();
+  }
+
+  /// Validates that the total number of winning tickets doesn't exceed the total available tickets,
+  /// and that all prizes are distributed across the available tickets.
+  /// 
+  /// Returns true if the configuration is valid, false otherwise.
+  Future<bool> validatePrizeDistribution() async {
+    // Get the total number of scratch cards
+    final dataRepository = DataRepository();
+    final totalScratchCards = await dataRepository.getScratchCardCount();
+
+    // Get all prizes
+    final prizes = _prizeProvider.prizes;
+
+    // Calculate the total number of winning tickets
+    int totalWinningTickets = 0;
+    for (final prize in prizes) {
+      totalWinningTickets += prize['max_occurrences'] as int;
+    }
+
+    // Ensure the total number of winning tickets doesn't exceed the total available tickets
+    return totalWinningTickets <= totalScratchCards;
   }
 
   /// Formats a date in the Italian format (dd/MM/yyyy).

@@ -3,10 +3,14 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/auth_provider.dart';
 import '../../core/models/prize_provider.dart';
+import '../../core/models/database_schema.dart';
+import '../../core/models/session_provider.dart';
+import '../../core/repositories/data_repository.dart';
 import '../../config/routes.dart';
 import '../../shared/constants/app_constants.dart';
 import '../../shared/widgets/app_scaffold.dart';
 import '../../shared/widgets/responsive_layout.dart';
+import '../../l10n/app_localizations.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -18,19 +22,26 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _pinController = TextEditingController();
   final TextEditingController _totalCardsController = TextEditingController();
+  final TextEditingController _remainingCardsController = TextEditingController();
+  final DataRepository _dataRepository = DataRepository();
 
   @override
   void initState() {
     super.initState();
-    // Load values from SharedPreferences
+    // Load values from database
     _loadSettings();
   }
 
   Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+
+    // Get scratch card count from database
+    final scratchCardCount = await _dataRepository.getScratchCardCount();
+    final remainingCards = await _dataRepository.getRemainingScratcchCards();
+
     setState(() {
-      _totalCardsController.text = prefs.getInt(AppConstants.scratchCardCountKey)?.toString() 
-          ?? AppConstants.defaultScratchCardCount.toString();
+      _totalCardsController.text = scratchCardCount.toString();
+      _remainingCardsController.text = remainingCards.toString();
     });
   }
 
@@ -38,17 +49,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _pinController.dispose();
     _totalCardsController.dispose();
+    _remainingCardsController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Check if user is authenticated
     final authProvider = Provider.of<AuthProvider>(context);
     if (!authProvider.isAuthenticated) {
-      // Redirect to auth screen if not authenticated
+      // Prevent multiple redirects and possible crash by checking mounted
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pushReplacementNamed(context, AppRoutes.auth);
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, AppRoutes.auth);
+        }
       });
       // Return loading indicator while redirecting
       return const Scaffold(
@@ -59,7 +72,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     return AppScaffold(
-      title: 'Impostazioni',
+      title: AppLocalizations.of(context).translate('settings'),
       showBackButton: true,
       body: ResponsiveLayout(
         mobile: _buildMobileLayout(),
@@ -80,6 +93,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildPrizeSettings(),
           const SizedBox(height: 16),
           _buildPrizeHistory(),
+          const SizedBox(height: 16),
+          _buildResetSection(context),
         ],
       ),
     );
@@ -102,6 +117,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildPrizeSettings(),
           const SizedBox(height: 16),
           _buildPrizeHistory(),
+          const SizedBox(height: 16),
+          _buildResetSection(context),
         ],
       ),
     );
@@ -115,12 +132,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionTitle(title: 'Cambia PIN'),
+          SectionTitle(title: AppLocalizations.of(context).translate('change_pin')),
           TextField(
             controller: _currentPinController,
-            decoration: const InputDecoration(
-              labelText: 'PIN attuale (4 cifre)',
-              hintText: 'Inserisci il PIN attuale',
+            decoration: InputDecoration(
+              labelText: AppLocalizations.of(context).translate('current_pin'),
+              hintText: AppLocalizations.of(context).translate('enter_current_pin'),
             ),
             keyboardType: TextInputType.number,
             maxLength: 4,
@@ -129,9 +146,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 8),
           TextField(
             controller: _pinController,
-            decoration: const InputDecoration(
-              labelText: 'Nuovo PIN (4 cifre)',
-              hintText: 'Inserisci un nuovo PIN',
+            decoration: InputDecoration(
+              labelText: AppLocalizations.of(context).translate('new_pin'),
+              hintText: AppLocalizations.of(context).translate('enter_new_pin'),
             ),
             keyboardType: TextInputType.number,
             maxLength: 4,
@@ -153,7 +170,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (_currentPinController.text.length != AppConstants.defaultPinLength ||
                   _pinController.text.length != AppConstants.defaultPinLength) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Il PIN deve essere di 4 cifre')),
+                  SnackBar(content: Text(AppLocalizations.of(context).translate('pin_must_be_4_digits'))),
                 );
                 return;
               }
@@ -167,11 +184,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _currentPinController.clear();
                 _pinController.clear();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('PIN aggiornato con successo')),
+                  SnackBar(content: Text(AppLocalizations.of(context).translate('pin_updated_successfully'))),
                 );
               }
             },
-            child: const Text('Salva PIN'),
+            child: Text(AppLocalizations.of(context).translate('save_pin')),
           ),
         ],
       ),
@@ -183,37 +200,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionTitle(title: 'Biglietti Totali'),
+          SectionTitle(title: AppLocalizations.of(context).translate('ticket_management')),
           TextField(
             controller: _totalCardsController,
-            decoration: const InputDecoration(
-              labelText: 'Numero totale di biglietti',
-              hintText: 'Inserisci il numero totale di biglietti',
+            decoration: InputDecoration(
+              labelText: AppLocalizations.of(context).translate('total_tickets'),
+              hintText: AppLocalizations.of(context).translate('enter_total_tickets'),
             ),
             keyboardType: TextInputType.number,
           ),
           const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () async {
-              // Parse the input value
-              final int? totalCards = int.tryParse(_totalCardsController.text);
+          TextField(
+            controller: _remainingCardsController,
+            decoration: InputDecoration(
+              labelText: AppLocalizations.of(context).translate('remaining_tickets'),
+              hintText: AppLocalizations.of(context).translate('remaining_tickets_hint'),
+            ),
+            keyboardType: TextInputType.number,
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    // Parse the input values
+                    final int? totalCards = int.tryParse(_totalCardsController.text);
+                    final int? remainingCards = int.tryParse(_remainingCardsController.text);
 
-              if (totalCards == null || totalCards <= 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Inserisci un numero valido di biglietti')),
-                );
-                return;
-              }
+                    if (totalCards == null || totalCards <= 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(AppLocalizations.of(context).translate('enter_valid_total_tickets'))),
+                      );
+                      return;
+                    }
 
-              // Save the total card count to SharedPreferences
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setInt(AppConstants.scratchCardCountKey, totalCards);
+                    if (remainingCards == null || remainingCards < 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(AppLocalizations.of(context).translate('enter_valid_remaining_tickets'))),
+                      );
+                      return;
+                    }
 
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Numero di biglietti aggiornato')),
-              );
-            },
-            child: const Text('Salva Configurazione'),
+                    if (remainingCards > totalCards) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(AppLocalizations.of(context).translate('remaining_tickets_cannot_exceed_total'))),
+                      );
+                      return;
+                    }
+
+                    // Save the total card count to database
+                    final successTotal = await _dataRepository.setScratchCardCount(totalCards);
+                    final successRemaining = await _dataRepository.setRemainingScratcchCards(remainingCards);
+
+                    if (successTotal && successRemaining) {
+                      // Recalculate probabilities based on the new total scratch cards
+                      final prizeProvider = Provider.of<PrizeProvider>(context, listen: false);
+                      await prizeProvider.recalculateProbabilities();
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(AppLocalizations.of(context).translate('tickets_updated_probabilities_recalculated'))),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(AppLocalizations.of(context).translate('error_saving'))),
+                      );
+                    }
+                  },
+                  child: Text(AppLocalizations.of(context).translate('save_configuration')),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -231,7 +288,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const SectionTitle(title: 'Gestione Premi'),
+              SectionTitle(title: AppLocalizations.of(context).translate('prize_management')),
               IconButton(
                 icon: const Icon(Icons.add_circle),
                 onPressed: () {
@@ -242,10 +299,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           if (prizes.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16.0),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
               child: Center(
-                child: Text('Nessun premio configurato. Aggiungi un premio per iniziare.'),
+                child: Text(AppLocalizations.of(context).translate('no_prizes_configured')),
               ),
             )
           else
@@ -257,7 +314,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 final prize = prizes[index];
                 return ListTile(
                   title: Text(prize['name'] as String),
-                  subtitle: Text('Probabilità: ${prize['probability']}%'),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(AppLocalizations.of(context).translate('probability').replaceAll('{probability}', prize['probability'].toStringAsFixed(2))),
+                      Text(AppLocalizations.of(context).translate('wins')
+                          .replaceAll('{current}', prize['current_occurrences'].toString())
+                          .replaceAll('{max}', prize['max_occurrences'].toString())),
+                    ],
+                  ),
+                  isThreeLine: true,
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -284,7 +350,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: Text(
-                'Probabilità totale: ${_calculateTotalProbability(prizes)}%',
+                AppLocalizations.of(context).translate('total_probability').replaceAll('{probability}', _calculateTotalProbability(prizes).toString()),
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   color: _calculateTotalProbability(prizes) > 100 
@@ -309,62 +375,99 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showAddEditPrizeDialog(BuildContext context, {int? index}) {
     final prizeProvider = Provider.of<PrizeProvider>(context, listen: false);
     final TextEditingController nameController = TextEditingController();
-    final TextEditingController probabilityController = TextEditingController();
+    final TextEditingController maxOccurrencesController = TextEditingController();
 
     // If editing an existing prize, pre-fill the controllers
     if (index != null) {
       final prize = prizeProvider.prizes[index];
       nameController.text = prize['name'] as String;
-      probabilityController.text = (prize['probability'] as double).toString();
+      maxOccurrencesController.text = (prize['max_occurrences'] as int).toString();
+    } else {
+      // Default value for new prizes
+      maxOccurrencesController.text = '1';
     }
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(index == null ? 'Aggiungi Premio' : 'Modifica Premio'),
+        title: Text(index == null ? AppLocalizations.of(context).translate('add_prize') : AppLocalizations.of(context).translate('edit_prize')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nome Premio',
-                hintText: 'Es. Buono Sconto 10%',
+              decoration: InputDecoration(
+                labelText: AppLocalizations.of(context).translate('prize_name'),
+                hintText: AppLocalizations.of(context).translate('prize_name_example'),
               ),
             ),
             const SizedBox(height: 8),
             TextField(
-              controller: probabilityController,
-              decoration: const InputDecoration(
-                labelText: 'Probabilità (%)',
-                hintText: 'Es. 20',
+              controller: maxOccurrencesController,
+              decoration: InputDecoration(
+                labelText: AppLocalizations.of(context).translate('max_wins'),
+                hintText: AppLocalizations.of(context).translate('max_wins_example'),
               ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              AppLocalizations.of(context).translate('probability_calculation_info'),
+              style: const TextStyle(
+                fontStyle: FontStyle.italic,
+                fontSize: 12,
+              ),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Annulla'),
+            child: Text(AppLocalizations.of(context).translate('cancel')),
           ),
           TextButton(
             onPressed: () async {
               // Validate inputs
               final name = nameController.text.trim();
-              final probabilityText = probabilityController.text.trim();
+              final maxOccurrencesText = maxOccurrencesController.text.trim();
 
               if (name.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Inserisci un nome per il premio')),
+                  SnackBar(content: Text(AppLocalizations.of(context).translate('enter_prize_name'))),
                 );
                 return;
               }
 
-              final double? probability = double.tryParse(probabilityText);
-              if (probability == null || probability <= 0 || probability > 100) {
+              final int? maxOccurrences = int.tryParse(maxOccurrencesText);
+              if (maxOccurrences == null || maxOccurrences <= 0) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Inserisci una probabilità valida (0-100)')),
+                  SnackBar(content: Text(AppLocalizations.of(context).translate('enter_valid_max_wins'))),
+                );
+                return;
+              }
+
+              // Get total scratch cards to validate max occurrences
+              final dataRepository = DataRepository();
+              final totalScratchCards = await dataRepository.getScratchCardCount();
+
+              // Calculate total max occurrences across all prizes
+              int totalMaxOccurrences = 0;
+              for (var prize in prizeProvider.prizes) {
+                if (index != null && prize['id'] == prizeProvider.prizes[index]['id']) {
+                  // Skip the current prize being edited
+                  continue;
+                }
+                totalMaxOccurrences += prize['max_occurrences'] as int;
+              }
+              totalMaxOccurrences += maxOccurrences;
+
+              // Check if total max occurrences exceeds total scratch cards
+              if (totalMaxOccurrences > totalScratchCards) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(AppLocalizations.of(context).translate('total_prizes_exceed_tickets')
+                      .replaceAll('{totalPrizes}', totalMaxOccurrences.toString())
+                      .replaceAll('{totalTickets}', totalScratchCards.toString()))),
                 );
                 return;
               }
@@ -372,17 +475,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // Save the prize
               if (index == null) {
                 // Add new prize
-                await prizeProvider.addPrize(name, probability);
+                await prizeProvider.addPrize(name, maxOccurrences);
               } else {
                 // Update existing prize
-                await prizeProvider.updatePrize(index, name, probability);
+                final prize = prizeProvider.prizes[index];
+                await prizeProvider.updatePrize(prize['id'] as int, name, maxOccurrences);
               }
 
               // Check if total probability exceeds 100%
               if (!(await prizeProvider.validateProbabilities())) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Attenzione: la somma delle probabilità supera il 100%'),
+                  SnackBar(
+                    content: Text(AppLocalizations.of(context).translate('probability_exceeds_100')),
                     backgroundColor: Colors.orange,
                   ),
                 );
@@ -393,7 +497,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Navigator.pop(context);
               }
             },
-            child: const Text('Salva'),
+            child: Text(AppLocalizations.of(context).translate('save')),
           ),
         ],
       ),
@@ -407,24 +511,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Elimina Premio'),
-        content: Text('Sei sicuro di voler eliminare il premio "${prize['name']}"?'),
+        title: Text(AppLocalizations.of(context).translate('delete')),
+        content: Text('${AppLocalizations.of(context).translate('confirm')} "${prize['name']}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Annulla'),
+            child: Text(AppLocalizations.of(context).translate('cancel')),
           ),
           TextButton(
             onPressed: () async {
-              await prizeProvider.deletePrize(index);
+              await prizeProvider.deletePrize(prize['id']);
               if (context.mounted) {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Premio eliminato')),
+                  SnackBar(content: Text(AppLocalizations.of(context).translate('prize_deleted'))),
                 );
               }
             },
-            child: const Text('Elimina'),
+            child: Text(AppLocalizations.of(context).translate('delete')),
             style: TextButton.styleFrom(
               foregroundColor: Theme.of(context).colorScheme.error,
             ),
@@ -445,7 +549,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const SectionTitle(title: 'Storico Premi'),
+              SectionTitle(title: AppLocalizations.of(context).translate('prize_history')),
               if (history.isNotEmpty)
                 IconButton(
                   icon: const Icon(Icons.delete_sweep),
@@ -457,65 +561,208 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           if (history.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16.0),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
               child: Center(
-                child: Text('Nessun premio vinto finora.'),
+                child: Text(AppLocalizations.of(context).translate('no_prizes_won')),
               ),
             )
           else
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: history.length,
-              itemBuilder: (context, index) {
-                final item = history[index];
-                // Format the date from ISO string to readable format
-                final DateTime date = DateTime.parse(item['date'] as String);
-                final String formattedDate = '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+            // Limit the list's height so it's scrollable and doesn't expand infinitely in a Column
+            SizedBox(
+              height: 300, // Adjust height as appropriate for your UI
+              child: ListView.builder(
+                itemCount: history.length,
+                itemBuilder: (context, index) {
+                  final item = history[index];
+                  // Safe date parsing with fallback
+                  String formattedDate = '';
+                  try {
+                    final dateRaw = item[DatabaseSchema.historyTimestampColumn] as String?;
+                    if (dateRaw != null) {
+                      final date = DateTime.tryParse(dateRaw);
+                      if (date != null) {
+                        formattedDate =
+                            '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+                      } else {
+                        formattedDate = AppLocalizations.of(context).translate('invalid_date');
+                      }
+                    } else {
+                      formattedDate = AppLocalizations.of(context).translate('missing_date');
+                    }
+                  } catch (e) {
+                    formattedDate = AppLocalizations.of(context).translate('date_error');
+                  }
 
-                return ListTile(
-                  leading: const Icon(Icons.emoji_events),
-                  title: Text(item['prize'] as String),
-                  subtitle: Text('$formattedDate - ${item['customer']}'),
-                );
-              },
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+                    child: ListTile(
+                      leading: const Icon(Icons.emoji_events, color: Colors.amber),
+                      title: Text(
+                        item[DatabaseSchema.historyPrizeNameColumn]?.toString() ?? AppLocalizations.of(context).translate('unknown_prize'),
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(AppLocalizations.of(context).translate('date').replaceAll('{date}', formattedDate)),
+                          if (item[DatabaseSchema.historyCustomerColumn] != null)
+                            Text(AppLocalizations.of(context).translate('customer').replaceAll('{customer}', item[DatabaseSchema.historyCustomerColumn].toString())),
+                        ],
+                      ),
+                      isThreeLine: item[DatabaseSchema.historyCustomerColumn] != null,
+                    ),
+                  );
+                },
+              ),
             ),
         ],
       ),
     );
   }
 
-  void _showClearHistoryDialog(BuildContext context) {
-    final prizeProvider = Provider.of<PrizeProvider>(context, listen: false);
+void _showClearHistoryDialog(BuildContext context) {
+  final prizeProvider = Provider.of<PrizeProvider>(context, listen: false);
+  bool isLoading = false;
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cancella Storico'),
-        content: const Text('Sei sicuro di voler cancellare tutto lo storico dei premi? Questa azione non può essere annullata.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annulla'),
-          ),
-          TextButton(
-            onPressed: () async {
-              await prizeProvider.clearHistory();
-              if (context.mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Storico premi cancellato')),
-                );
-              }
-            },
-            child: const Text('Cancella'),
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
+  showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(AppLocalizations.of(context).translate('clear_history')),
+          content: isLoading
+              ? const SizedBox(height: 64, child: Center(child: CircularProgressIndicator()))
+              : Text(AppLocalizations.of(context).translate('confirm_clear_history')),
+          actions: [
+            TextButton(
+              onPressed: isLoading ? null : () => Navigator.pop(context),
+              child: Text(AppLocalizations.of(context).translate('cancel')),
             ),
+            TextButton(
+              onPressed: isLoading
+                  ? null
+                  : () async {
+                      setState(() => isLoading = true);
+                      await prizeProvider.clearHistory();
+                      if (Navigator.of(context).canPop()) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(AppLocalizations.of(context).translate('history_cleared'))),
+                        );
+                      }
+                    },
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+              child: Text(AppLocalizations.of(context).translate('delete')),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Widget _buildResetSection(BuildContext context) {
+  return AppCard(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionTitle(title: AppLocalizations.of(context).translate('total_reset')),
+        const SizedBox(height: 8),
+        Text(
+          AppLocalizations.of(context).translate('reset_warning'),
+          style: const TextStyle(
+            color: Colors.red,
+            fontWeight: FontWeight.bold,
           ),
-        ],
-      ),
-    );
-  }
+        ),
+        const SizedBox(height: 16),
+        ElevatedButton.icon(
+          icon: const Icon(Icons.warning_amber_rounded),
+          label: Text(AppLocalizations.of(context).translate('total_reset')),
+          onPressed: () {
+            _showResetConfirmationDialog(context);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+void _showResetConfirmationDialog(BuildContext context) {
+  final dataRepository = DataRepository();
+  final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+  final prizeProvider = Provider.of<PrizeProvider>(context, listen: false);
+  bool isLoading = false;
+
+  showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(AppLocalizations.of(context).translate('confirm_total_reset')),
+          content: isLoading
+              ? const SizedBox(height: 64, child: Center(child: CircularProgressIndicator()))
+              : Text(
+                  AppLocalizations.of(context).translate('reset_confirmation_message'),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+          actions: [
+            TextButton(
+              onPressed: isLoading ? null : () => Navigator.pop(context),
+              child: Text(AppLocalizations.of(context).translate('cancel')),
+            ),
+            TextButton(
+              onPressed: isLoading
+                  ? null
+                  : () async {
+                      setState(() => isLoading = true);
+
+                      // Reset all data
+                      final success = await dataRepository.resetAllData();
+
+                      // Reset session state
+                      if (success) {
+                        await sessionProvider.resetSession();
+
+                        // Reload prize data
+                        await prizeProvider.loadPrizeData();
+
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(AppLocalizations.of(context).translate('reset_completed'))),
+                          );
+
+                          // Reload settings
+                          if (context.mounted) {
+                            _loadSettings();
+                          }
+                        }
+                      } else {
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(AppLocalizations.of(context).translate('reset_error'))),
+                          );
+                        }
+                      }
+                    },
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+              child: Text(AppLocalizations.of(context).translate('total_reset')),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
 }

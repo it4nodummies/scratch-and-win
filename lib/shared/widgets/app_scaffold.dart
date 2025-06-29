@@ -35,7 +35,7 @@ class AppScaffold extends StatelessWidget {
             Text(
               AppConstants.pharmacyName,
               style: TextStyle(
-                fontSize: context.responsiveFontSize(18),
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -43,7 +43,7 @@ class AppScaffold extends StatelessWidget {
               Text(
                 title,
                 style: TextStyle(
-                  fontSize: context.responsiveFontSize(14),
+                  fontSize: 14,
                 ),
               ),
           ],
@@ -119,7 +119,7 @@ class SectionTitle extends StatelessWidget {
         title,
         style: style ??
             TextStyle(
-              fontSize: context.responsiveFontSize(20),
+              fontSize: 20,
               fontWeight: FontWeight.bold,
             ),
       ),

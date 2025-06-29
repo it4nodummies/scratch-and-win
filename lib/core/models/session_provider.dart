@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
+import 'package:provider/provider.dart';
 import '../../shared/constants/app_constants.dart';
 import '../repositories/data_repository.dart';
+import 'prize_provider.dart';
 
 /// Provider for managing game session state.
 class SessionProvider extends ChangeNotifier {
@@ -11,6 +14,13 @@ class SessionProvider extends ChangeNotifier {
   bool _isScreenLocked = false;
   List<Map<String, dynamic>> _sessionPrizes = [];
   int? _currentSessionId;
+
+  @override
+  void dispose() {
+    // Clean up resources before disposing
+    _sessionPrizes.clear();
+    super.dispose();
+  }
 
   /// Whether a game session is currently active.
   bool get isSessionActive => _isSessionActive;
@@ -42,6 +52,7 @@ class SessionProvider extends ChangeNotifier {
   }
 
   /// Decrements the number of attempts remaining and checks if the screen should be locked.
+  /// Also decrements the remaining scratch cards count in the database.
   Future<void> decrementAttempts() async {
     if (_attemptsRemaining > 0) {
       _attemptsRemaining--;
@@ -57,12 +68,18 @@ class SessionProvider extends ChangeNotifier {
         );
       }
 
+      // Decrement the remaining scratch cards count
+      await _dataRepository.decrementRemainingScratcchCards();
+
       notifyListeners();
     }
   }
 
   /// Adds a prize to the session prizes list.
-  Future<void> addPrize(String name, String value) async {
+  /// 
+  /// The [context] parameter is required to access the PrizeProvider.
+  /// If [context] is null, the PrizeProvider will not be updated.
+  Future<void> addPrize(String name, String value, {BuildContext? context}) async {
     final timestamp = DateTime.now().toIso8601String();
 
     _sessionPrizes.add({
@@ -73,11 +90,31 @@ class SessionProvider extends ChangeNotifier {
 
     // Record prize win in the database
     if (_currentSessionId != null) {
+      // Find the prize ID by name to ensure current_occurrences is updated
+      int? prizeId;
+      final prizes = await _dataRepository.getAllPrizes();
+      for (var prize in prizes) {
+        if (prize['name'] == name) {
+          prizeId = prize['id'] as int;
+          break;
+        }
+      }
+
       await _dataRepository.recordPrizeWin(
         _currentSessionId!,
-        null, // prizeId is null since we're just using name
+        prizeId, // Now we pass the actual prizeId if found
         name
       );
+
+      // Update the PrizeProvider if context is provided
+      if (context != null) {
+        try {
+          final prizeProvider = Provider.of<PrizeProvider>(context, listen: false);
+          await prizeProvider.loadPrizeData(); // Reload prize data to reflect updated current_occurrences
+        } catch (e) {
+          print('Error updating PrizeProvider: $e');
+        }
+      }
     }
 
     notifyListeners();
@@ -128,7 +165,6 @@ class SessionProvider extends ChangeNotifier {
           _sessionPrizes = history.map((prize) {
             return {
               'name': prize['prize_name'],
-              'value': prize['prize_value'] ?? '', // Use prize_value if available, empty string otherwise
               'timestamp': prize['timestamp'],
             };
           }).toList();
@@ -144,6 +180,14 @@ class SessionProvider extends ChangeNotifier {
         _currentSessionId = null;
       }
 
+      // Ensure prize data is up-to-date by recalculating probabilities
+      // This will update current_occurrences values in the session
+      try {
+        await _dataRepository.recalculateProbabilities();
+      } catch (probError) {
+        print('Error recalculating probabilities: $probError');
+      }
+
       notifyListeners();
     } catch (e) {
       // Handle error with fallback to default values
@@ -157,6 +201,34 @@ class SessionProvider extends ChangeNotifier {
       _attemptsRemaining = AppConstants.defaultScratchCardCount;
 
       notifyListeners();
+    }
+  }
+
+  /// Resets the session state to default values.
+  /// This should be called after resetting the database.
+  Future<bool> resetSession() async {
+    try {
+      // End any active session
+      if (_isSessionActive && _currentSessionId != null) {
+        await _dataRepository.endSession(_currentSessionId!);
+      }
+
+      // Reset session state to defaults
+      _isSessionActive = false;
+      _isScreenLocked = false;
+      _sessionPrizes = [];
+      _currentSessionId = null;
+
+      // Get the default scratch card count from the reset database
+      final defaultCount = await _dataRepository.getScratchCardCount();
+      _totalAttempts = defaultCount;
+      _attemptsRemaining = defaultCount;
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      print('Error resetting session: $e');
+      return false;
     }
   }
 }
